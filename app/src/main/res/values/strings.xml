@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">YuntechCompusTour</string>
+    <string name="title_activity_compus_map">校園導覽</string>
+    <string name="action_marker_switch">圖例</string>
+    <string name="open">open</string>
+    <string name="close">close</string>
+    <string name="search_title">在找甚麼嗎?</string>
+</resources>
