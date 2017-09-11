@@ -7,10 +7,15 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.graphics.Point;
 import android.location.LocationManager;
+import android.os.Handler;
+import android.os.SystemClock;
 import android.provider.Settings;
+import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
 import android.os.Bundle;
+import android.support.v4.view.animation.LinearOutSlowInInterpolator;
 import android.support.v7.app.AlertDialog;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.SearchView;
@@ -20,6 +25,7 @@ import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.View;
+import android.view.animation.Interpolator;
 import android.widget.ArrayAdapter;
 import android.widget.CheckBox;
 import android.widget.ListView;
@@ -29,6 +35,7 @@ import android.widget.Toast;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.OnMapReadyCallback;
+import com.google.android.gms.maps.Projection;
 import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.model.BitmapDescriptor;
 import com.google.android.gms.maps.model.BitmapDescriptorFactory;
@@ -52,7 +59,7 @@ public class compus_map extends AppCompatActivity implements OnMapReadyCallback,
     private GoogleMap mMap;
     private static final int REQUEST_PERMISSION = 99; //設定權限是否設定成功的檢查碼
     private ListView lvSnippet;
-    private ArrayAdapter<String> adFloor;
+    private ArrayAdapter adFloor;
     private Toolbar toolbar;
     private SearchView searchView;
     private CheckBox cb_bicycle;
@@ -111,7 +118,7 @@ public class compus_map extends AppCompatActivity implements OnMapReadyCallback,
                 .putBoolean(trash_state, true)
                 .putBoolean(toilet_state, true)
                 .putBoolean(college_state, true)
-                .commit();
+                .apply();
     }
 
     public boolean onCreateOptionsMenu(Menu menu) {
@@ -135,10 +142,10 @@ public class compus_map extends AppCompatActivity implements OnMapReadyCallback,
     @Override
     public void onMapReady(GoogleMap googleMap) {
         mMap = googleMap;
+        LatLng yuntech = new LatLng(23.6951701,120.5337975);
         init_marker();
 
         if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            // TODO: Consider calling
             return;
         }
         mMap.setOnMarkerClickListener(this);
@@ -146,13 +153,13 @@ public class compus_map extends AppCompatActivity implements OnMapReadyCallback,
         mMap.getUiSettings().setZoomControlsEnabled(true);  // 右下角的放大縮小功能
         mMap.getUiSettings().setCompassEnabled(true);       // 左上角的指南針，要兩指旋轉才會出現
         mMap.getUiSettings().setMapToolbarEnabled(true);    // 右下角的導覽及開啟 Google Map功能
-        mMap.moveCamera(CameraUpdateFactory.newLatLng(latlng));
+        mMap.moveCamera(CameraUpdateFactory.newLatLng(yuntech));
         mMap.animateCamera(CameraUpdateFactory.zoomTo(16));     // 放大地圖到 16 倍大
         mMap.setInfoWindowAdapter(new MyInfoWindowAdapter());
     }
 
     @Override
-    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         switch (requestCode) {
             case REQUEST_PERMISSION:
                 if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
@@ -160,12 +167,10 @@ public class compus_map extends AppCompatActivity implements OnMapReadyCallback,
                 } else {
                     Toast.makeText(compus_map.this, "請允許所有權限避免功能不正常", Toast.LENGTH_SHORT).show();
                 }
-                return;
         }
     }
 
-    void checkGPS()
-    {
+    void checkGPS() {
         if(!isGPSEnabled(this)) {
             Toast.makeText(compus_map.this, "請開始定位功能避免定位失效", Toast.LENGTH_SHORT).show();
             Intent intent = new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS);
@@ -289,11 +294,11 @@ public class compus_map extends AppCompatActivity implements OnMapReadyCallback,
                         cb_trash.setChecked(temp_trash);
                         cb_toilet.setChecked(temp_toilet);
                         cb_college.setChecked(temp_college);
-                        settings.edit().putBoolean(bicycle_state, temp_bicycle).commit();
-                        settings.edit().putBoolean(montor_state, temp_montor).commit();
-                        settings.edit().putBoolean(trash_state, temp_trash).commit();
-                        settings.edit().putBoolean(toilet_state, temp_toilet).commit();
-                        settings.edit().putBoolean(college_state, temp_college).commit();
+                        settings.edit().putBoolean(bicycle_state, temp_bicycle)
+                                .putBoolean(montor_state, temp_montor)
+                                .putBoolean(trash_state, temp_trash)
+                                .putBoolean(toilet_state, temp_toilet)
+                                .putBoolean(college_state, temp_college).apply();
                         Toast.makeText(view.getContext(), "取消", Toast.LENGTH_SHORT).show();
                     }
                 }
@@ -311,6 +316,7 @@ public class compus_map extends AppCompatActivity implements OnMapReadyCallback,
                         singleMarker.remove();
                         singleMarker.setTag(temp_tag);
                     }
+
                     //在把有選取的標上
                     for(int i = 0;i<mMarkers.size();i++)
                     {
@@ -326,7 +332,9 @@ public class compus_map extends AppCompatActivity implements OnMapReadyCallback,
                                     .snippet(snippet)
                                     .icon(icon));
                             singleMarker.setTag(marker_type[0]);
-                            mMarkers.add(singleMarker);
+                            startDropMarkerAnimation(singleMarker);
+
+                            mMarkers.add(i,singleMarker);
                         }
                     }
                     for(int i = 0;i<mMarkers.size();i++)
@@ -344,7 +352,9 @@ public class compus_map extends AppCompatActivity implements OnMapReadyCallback,
                                     .snippet(snippet)
                                     .icon(icon));
                             singleMarker.setTag(marker_type[1]);
-                            mMarkers.add(singleMarker);
+                            startDropMarkerAnimation(singleMarker);
+
+                            mMarkers.add(i,singleMarker);
                         }
                     }
                     for(int i = 0;i<mMarkers.size();i++)
@@ -362,7 +372,9 @@ public class compus_map extends AppCompatActivity implements OnMapReadyCallback,
                                     .snippet(snippet)
                                     .icon(icon));
                             singleMarker.setTag(marker_type[2]);
-                            mMarkers.add(singleMarker);
+                            startDropMarkerAnimation(singleMarker);
+
+                            mMarkers.add(i,singleMarker);
                         }
                     }
                     for(int i = 0;i<mMarkers.size();i++)
@@ -380,7 +392,9 @@ public class compus_map extends AppCompatActivity implements OnMapReadyCallback,
                                     .snippet(snippet)
                                     .icon(icon));
                             singleMarker.setTag(marker_type[3]);
-                            mMarkers.add(singleMarker);
+                            startDropMarkerAnimation(singleMarker);
+
+                            mMarkers.add(i,singleMarker);
                         }
                     }
                     for(int i = 0;i<mMarkers.size();i++)
@@ -398,8 +412,11 @@ public class compus_map extends AppCompatActivity implements OnMapReadyCallback,
                                     .snippet(snippet)
                                     .icon(icon));
                             singleMarker.setTag(marker_type[4]);
-                            mMarkers.add(singleMarker);
+                            startDropMarkerAnimation(singleMarker);
+
+                            mMarkers.add(i,singleMarker);
                         }
+
                     }
                     //Toast.makeText(view.getContext(),"確定", Toast.LENGTH_SHORT).show();
                 }
@@ -411,23 +428,23 @@ public class compus_map extends AppCompatActivity implements OnMapReadyCallback,
         settings = getSharedPreferences(marker_data,0);
         switch(view.getId()) {
             case R.id.cb_bicycle:
-                settings.edit().putBoolean(bicycle_state,checked).commit();
+                settings.edit().putBoolean(bicycle_state,checked).apply();
                 //Toast.makeText(this,((CheckBox) view).getText() +"/n"+checked,Toast.LENGTH_SHORT).show();
                 break;
             case R.id.cb_motor:
-                settings.edit().putBoolean(montor_state,checked).commit();
+                settings.edit().putBoolean(montor_state,checked).apply();
                 //Toast.makeText(this,((CheckBox) view).getText() +"/n"+checked,Toast.LENGTH_SHORT).show();
                 break;
             case R.id.cb_trash:
-                settings.edit().putBoolean(trash_state,checked).commit();
+                settings.edit().putBoolean(trash_state,checked).apply();
                 //Toast.makeText(this,((CheckBox) view).getText() +"/n"+checked,Toast.LENGTH_SHORT).show();
                 break;
             case R.id.cb_toilet:
-                settings.edit().putBoolean(toilet_state,checked).commit();
+                settings.edit().putBoolean(toilet_state,checked).apply();
                 //Toast.makeText(this,((CheckBox) view).getText() +"/n"+checked,Toast.LENGTH_SHORT).show();
                 break;
             case R.id.cb_college:
-                settings.edit().putBoolean(college_state,checked).commit();
+                settings.edit().putBoolean(college_state,checked).apply();
                 //Toast.makeText(this,((CheckBox) view).getText() +"/n"+checked,Toast.LENGTH_SHORT).show();
                 break;
         }
@@ -442,6 +459,8 @@ public class compus_map extends AppCompatActivity implements OnMapReadyCallback,
                 .snippet(yuntech_json)
                 .icon(icon));
         singleMarker.setTag("學院");
+        startDropMarkerAnimation(singleMarker);
+
         mMarkers.add(singleMarker);
 
         latlng = new LatLng(23.696210, 120.536921);
@@ -451,6 +470,8 @@ public class compus_map extends AppCompatActivity implements OnMapReadyCallback,
                 .title("腳踏車停車場" + "----------")
                 .icon(icon));
         singleMarker.setTag("腳踏車車位");
+        startDropMarkerAnimation(singleMarker);
+
         mMarkers.add(singleMarker);
 
         latlng = new LatLng(23.697210, 120.536921);
@@ -460,6 +481,8 @@ public class compus_map extends AppCompatActivity implements OnMapReadyCallback,
                 .title("機車停車場" + "----------")
                 .icon(icon));
         singleMarker.setTag("機車車位");
+        startDropMarkerAnimation(singleMarker);
+
         mMarkers.add(singleMarker);
 
         latlng = new LatLng(23.698210, 120.536921);
@@ -469,6 +492,8 @@ public class compus_map extends AppCompatActivity implements OnMapReadyCallback,
                 .title("廁所" + "----------")
                 .icon(icon));
         singleMarker.setTag("廁所");
+        startDropMarkerAnimation(singleMarker);
+
         mMarkers.add(singleMarker);
 
         latlng = new LatLng(23.699210, 120.536921);
@@ -478,6 +503,8 @@ public class compus_map extends AppCompatActivity implements OnMapReadyCallback,
                 .title("垃圾桶" + "----------")
                 .icon(icon));
         singleMarker.setTag("垃圾桶");
+        startDropMarkerAnimation(singleMarker);
+
         mMarkers.add(singleMarker);
 
     }
@@ -489,4 +516,30 @@ public class compus_map extends AppCompatActivity implements OnMapReadyCallback,
         return false;
     }
 
+    private void startDropMarkerAnimation(final Marker marker) {
+        final LatLng target = marker.getPosition();
+        final Handler handler = new Handler();
+        final long start = SystemClock.uptimeMillis();
+        Projection proj = mMap.getProjection();
+        Point targetPoint = proj.toScreenLocation(target);
+        final long duration = (long) (25 + (targetPoint.y * 0.6));
+        Point startPoint = proj.toScreenLocation(marker.getPosition());
+        startPoint.y = 0;
+        final LatLng startLatLng = proj.fromScreenLocation(startPoint);
+        final Interpolator interpolator = new LinearOutSlowInInterpolator();
+        handler.post(new Runnable() {
+            @Override
+            public void run() {
+                long elapsed = SystemClock.uptimeMillis() - start;
+                float t = interpolator.getInterpolation((float) elapsed / duration);
+                double lng = t * target.longitude + (1 - t) * startLatLng.longitude;
+                double lat = t * target.latitude + (1 - t) * startLatLng.latitude;
+                marker.setPosition(new LatLng(lat, lng));
+                if (t < 1.0) {
+                    // Post again 16ms later == 60 frames per second
+                    handler.postDelayed(this, 16);
+                }
+            }
+        });
+    }
 }
