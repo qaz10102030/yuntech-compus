@@ -7,19 +7,21 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
 import android.graphics.Point;
 import android.location.LocationManager;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.SystemClock;
 import android.provider.Settings;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
-import android.os.Bundle;
 import android.support.v4.view.animation.LinearOutSlowInInterpolator;
 import android.support.v7.app.AlertDialog;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.SearchView;
 import android.support.v7.widget.Toolbar;
+import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuInflater;
@@ -40,27 +42,32 @@ import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.model.BitmapDescriptor;
 import com.google.android.gms.maps.model.BitmapDescriptorFactory;
 import com.google.android.gms.maps.model.LatLng;
-
 import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
+import com.google.android.gms.maps.model.PolygonOptions;
 
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Timer;
+import java.util.TimerTask;
 
 import static android.Manifest.permission.ACCESS_FINE_LOCATION;
 import static android.Manifest.permission.READ_EXTERNAL_STORAGE;
 import static android.Manifest.permission.WRITE_EXTERNAL_STORAGE;
 
-public class compus_map extends AppCompatActivity implements OnMapReadyCallback,GoogleMap.OnMarkerClickListener {
+public class compus_map extends AppCompatActivity implements
+        OnMapReadyCallback,
+        GoogleMap.OnMarkerClickListener,
+        SearchView.OnQueryTextListener{
 
     private GoogleMap mMap;
     private static final int REQUEST_PERMISSION = 99; //設定權限是否設定成功的檢查碼
-    private ListView lvSnippet;
     private ArrayAdapter adFloor;
-    private Toolbar toolbar;
     private SearchView searchView;
     private CheckBox cb_bicycle;
     private CheckBox cb_montor;
@@ -80,7 +87,14 @@ public class compus_map extends AppCompatActivity implements OnMapReadyCallback,
     private static final String college_state = "college_state";
     private boolean isComfirmed;
     private static final String[] marker_type = {"腳踏車車位","機車車位","垃圾桶","廁所","學院"};
+    private static final int[] marker_icon = {R.mipmap.marker_biycycle,R.mipmap.marker_scooter,R.mipmap.marker_trash,R.mipmap.marker_toilet,R.mipmap.marker_college};
     private static final String yuntech_json  = "[{\"college\":\"工程學院\",\"department\":[{\"name\":\"工程一館\",\"code\":\"EM\"},{\"name\":\"工程二館\",\"code\":\"EL\"},{\"name\":\"工程三館\",\"code\":\"ES\"},{\"name\":\"工程四館\",\"code\":\"EC\"},{\"name\":\"工程五館\",\"code\":\"EB\",\"floor\":[{\"floor_num\":\"1F\",\"classroom\":[{\"type\":\"電腦教室\",\"number\":\"EB102\"},{\"type\":\"一般教室\",\"number\":\"EB109\"},{\"type\":\"一般教室\",\"number\":\"EB110\"}]},{\"floor_num\":\"2F\",\"classroom\":[{\"type\":\"實驗室\",\"number\":\"EB201\"},{\"type\":\"一般教室\",\"number\":\"EB202\"}]}]},{\"name\":\"工程六館\",\"code\":\"EN\"}]}]";
+
+    private HashMap<String, HashMap<String, ArrayList<LatLng>>> mapArea=null;
+    private HashMap<String, HashMap<String, List<LatLng>>> buildkind=null;
+    private MenuItem menuSearchItem;
+    private static Boolean isExit = false;
+    private static Boolean hasTask = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -100,17 +114,15 @@ public class compus_map extends AppCompatActivity implements OnMapReadyCallback,
                 .findFragmentById(R.id.map);
         mapFragment.getMapAsync(this);
 
-        toolbar = (Toolbar) findViewById(R.id.toolbar);
+        Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
         toolbar.setOnMenuItemClickListener(new Toolbar.OnMenuItemClickListener() {
             @Override
             public boolean onMenuItemClick(MenuItem item) {
-                // Handle the menu item
                 return true;
             }
         });
         toolbar.inflateMenu(R.menu.main_menu);
         setSupportActionBar(toolbar);
-
         settings = getSharedPreferences(marker_data,0);
         settings.edit()
                 .putBoolean(bicycle_state, true)
@@ -119,30 +131,33 @@ public class compus_map extends AppCompatActivity implements OnMapReadyCallback,
                 .putBoolean(toilet_state, true)
                 .putBoolean(college_state, true)
                 .apply();
+
+        buildkind = CommonMethod.Buildingkind();
+        mapArea = CommonMethod.BuildingArea();
     }
 
     public boolean onCreateOptionsMenu(Menu menu) {
         MenuInflater inflater = getMenuInflater();
         inflater.inflate(R.menu.main_menu, menu);
 
-        MenuItem menuSearchItem = menu.findItem(R.id.my_search);
+        menuSearchItem = menu.findItem(R.id.my_search);
 
-        // Get the SearchView and set the searchable configuration
         SearchManager searchManager = (SearchManager) getSystemService(Context.SEARCH_SERVICE);
         searchView = (SearchView) menuSearchItem.getActionView();
 
-        // Assumes current activity is the searchable activity
         searchView.setSearchableInfo(searchManager.getSearchableInfo(getComponentName()));
-
-        // 這邊讓icon可以還原到搜尋的icon
+        searchView.setOnQueryTextListener(this);
+        searchView.setQueryHint("在找什麼嗎?");
         searchView.setIconifiedByDefault(true);
         return true;
+
     }
 
     @Override
     public void onMapReady(GoogleMap googleMap) {
         mMap = googleMap;
         LatLng yuntech = new LatLng(23.6951701,120.5337975);
+        addArea();
         init_marker();
 
         if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
@@ -200,7 +215,7 @@ public class compus_map extends AppCompatActivity implements OnMapReadyCallback,
             // 顯示地標snippet
             String floorinfo = marker.getSnippet();
             if( floorinfo != null) {
-                lvSnippet = ((ListView) infoWindow.findViewById(R.id.lvFloor));
+                ListView lvSnippet = ((ListView) infoWindow.findViewById(R.id.lvFloor));
                 adFloor = new ArrayAdapter(compus_map.this, android.R.layout.simple_list_item_1);
                 lvSnippet.setAdapter(adFloor);
                 parsefloor(floorinfo);
@@ -268,7 +283,6 @@ public class compus_map extends AppCompatActivity implements OnMapReadyCallback,
         cb_trash = (CheckBox)view.findViewById(R.id.cb_trash);
         cb_toilet = (CheckBox)view.findViewById(R.id.cb_toilet);
         cb_college = (CheckBox)view.findViewById(R.id.cb_college);
-        settings = getSharedPreferences(marker_data,0);
         cb_bicycle.setChecked(settings.getBoolean(bicycle_state,true));
         cb_montor.setChecked(settings.getBoolean(montor_state,true));
         cb_trash.setChecked(settings.getBoolean(trash_state,true));
@@ -343,9 +357,8 @@ public class compus_map extends AppCompatActivity implements OnMapReadyCallback,
                             latlng = mMarkers.get(i).getPosition();
                             String title = mMarkers.get(i).getTitle();
                             String snippet = mMarkers.get(i).getSnippet();
-                            icon = BitmapDescriptorFactory.fromResource(R.mipmap.marker_biycycle);
-                            mMarkers.remove(i);
                             icon = BitmapDescriptorFactory.fromResource(R.mipmap.marker_scooter);
+                            mMarkers.remove(i);
                             singleMarker = mMap.addMarker( new MarkerOptions()
                                     .position(latlng)
                                     .title(title)
@@ -363,9 +376,8 @@ public class compus_map extends AppCompatActivity implements OnMapReadyCallback,
                             latlng = mMarkers.get(i).getPosition();
                             String title = mMarkers.get(i).getTitle();
                             String snippet = mMarkers.get(i).getSnippet();
-                            icon = BitmapDescriptorFactory.fromResource(R.mipmap.marker_biycycle);
-                            mMarkers.remove(i);
                             icon = BitmapDescriptorFactory.fromResource(R.mipmap.marker_trash);
+                            mMarkers.remove(i);
                             singleMarker = mMap.addMarker( new MarkerOptions()
                                     .position(latlng)
                                     .title(title)
@@ -383,9 +395,8 @@ public class compus_map extends AppCompatActivity implements OnMapReadyCallback,
                             latlng = mMarkers.get(i).getPosition();
                             String title = mMarkers.get(i).getTitle();
                             String snippet = mMarkers.get(i).getSnippet();
-                            icon = BitmapDescriptorFactory.fromResource(R.mipmap.marker_biycycle);
-                            mMarkers.remove(i);
                             icon = BitmapDescriptorFactory.fromResource(R.mipmap.marker_toilet);
+                            mMarkers.remove(i);
                             singleMarker = mMap.addMarker( new MarkerOptions()
                                     .position(latlng)
                                     .title(title)
@@ -403,9 +414,8 @@ public class compus_map extends AppCompatActivity implements OnMapReadyCallback,
                             latlng = mMarkers.get(i).getPosition();
                             String title = mMarkers.get(i).getTitle();
                             String snippet = mMarkers.get(i).getSnippet();
-                            icon = BitmapDescriptorFactory.fromResource(R.mipmap.marker_biycycle);
-                            mMarkers.remove(i);
                             icon = BitmapDescriptorFactory.fromResource(R.mipmap.marker_college);
+                            mMarkers.remove(i);
                             singleMarker = mMap.addMarker( new MarkerOptions()
                                     .position(latlng)
                                     .title(title)
@@ -425,7 +435,6 @@ public class compus_map extends AppCompatActivity implements OnMapReadyCallback,
 
     public void onCheckboxClicked(View view) {
         boolean checked = ((CheckBox) view).isChecked();
-        settings = getSharedPreferences(marker_data,0);
         switch(view.getId()) {
             case R.id.cb_bicycle:
                 settings.edit().putBoolean(bicycle_state,checked).apply();
@@ -542,4 +551,104 @@ public class compus_map extends AppCompatActivity implements OnMapReadyCallback,
             }
         });
     }
+
+    private void addArea() {
+        PolygonOptions polygonOptions;
+        for (String key : mapArea.keySet()) {
+            int color = 0;
+            if (key.equals("行政區域")) {
+                color = Color.argb(255, 140, 178, 131);
+            } else if (key.equals("一般區域")) {
+                color = Color.argb(255, 199, 211, 147);
+            } else if (key.equals("學生宿舍")) {
+                color = Color.argb(255, 221, 152, 155);
+            } else if (key.equals("管理學院")) {
+                color = Color.argb(255, 114, 176, 187);
+            } else if (key.equals("工程學院")) {
+                color = Color.argb(255, 189, 154, 186);
+            } else if (key.equals("人科學院")) {
+                color = Color.argb(255, 210, 185, 93);
+            } else if (key.equals("設計學院")) {
+                color = Color.argb(255, 200, 131, 98);
+            }
+            for (String key1 : mapArea.get(key).keySet()) {
+                polygonOptions = new PolygonOptions();
+                polygonOptions
+                        .addAll(mapArea.get(key).get(key1))
+                        .strokeWidth(0)
+                        .fillColor(color);
+                mMap.addPolygon(polygonOptions).setZIndex(1);
+            }
+        }
+        for (String key : buildkind.keySet()) {
+            int color = 0;
+            if (!key.equals("推薦景點") && !key.equals("休閒區域")) {
+                color = Color.argb(255, 237, 229, 210);
+            } else if (key.equals("推薦景點")) {
+                color = Color.argb(255, 188, 218, 220);
+            } else if (key.equals("休閒區域")) {
+                color = Color.argb(255, 173, 199, 128);
+            }
+            for (String key1 : buildkind.get(key).keySet()) {
+                polygonOptions = new PolygonOptions();
+                polygonOptions
+                        .addAll(buildkind.get(key).get(key1))
+                        .strokeWidth(1)
+                        .strokeColor(Color.BLACK)
+                        .fillColor(color);
+                mMap.addPolygon(polygonOptions).setZIndex(2);
+            }
+        }
+    }
+
+    Timer timerExit = new Timer();
+    TimerTask task = new TimerTask() {
+        @Override
+        public void run() {
+            isExit = false;
+            hasTask = true;
+        }
+    };
+
+    @Override
+    public boolean onKeyDown(int keyCode, KeyEvent event) {
+        // 判斷是否按下Back
+        if (keyCode == KeyEvent.KEYCODE_BACK) {
+            if (!searchView.isIconified()) {
+                searchView.setIconified(true);
+            }else {
+                // 是否要退出
+                if (isExit == false) {
+                    isExit = true; //記錄下一次要退出
+                    Toast.makeText(this, "再按一次Back退出APP"
+                            , Toast.LENGTH_SHORT).show();
+                    // 如果超過兩秒則恢復預設值
+                    if (!hasTask) {
+                        timerExit.schedule(task, 2000);
+                    }
+                } else {
+                    finish(); // 離開程式
+                    System.exit(0);
+                }
+            }
+        }
+        return false;
+    }
+
+
+
+    @Override
+    public boolean onQueryTextSubmit(String query) {
+        Toast.makeText(this,"送出"+query,Toast.LENGTH_SHORT).show();
+        searchView.setIconified(true);
+        return false;
+    }
+
+    @Override
+    public boolean onQueryTextChange(String newText) {
+        if(newText.equals(""))
+            searchView.setIconified(true);
+        return false;
+    }
+
 }
