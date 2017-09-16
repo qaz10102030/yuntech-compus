@@ -1,6 +1,7 @@
 package tour.compus.yuntech.yuntechcompustour;
 
 import android.Manifest;
+import android.annotation.TargetApi;
 import android.app.SearchManager;
 import android.content.Context;
 import android.content.DialogInterface;
@@ -10,6 +11,7 @@ import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Point;
 import android.location.LocationManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.SystemClock;
@@ -92,10 +94,10 @@ public class compus_map extends AppCompatActivity implements
 
     private HashMap<String, HashMap<String, ArrayList<LatLng>>> mapArea=null;
     private HashMap<String, HashMap<String, List<LatLng>>> buildkind=null;
-    private MenuItem menuSearchItem;
     private static Boolean isExit = false;
     private static Boolean hasTask = false;
 
+    @TargetApi(Build.VERSION_CODES.JELLY_BEAN)
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -140,7 +142,7 @@ public class compus_map extends AppCompatActivity implements
         MenuInflater inflater = getMenuInflater();
         inflater.inflate(R.menu.main_menu, menu);
 
-        menuSearchItem = menu.findItem(R.id.my_search);
+        MenuItem menuSearchItem = menu.findItem(R.id.my_search);
 
         SearchManager searchManager = (SearchManager) getSystemService(Context.SEARCH_SERVICE);
         searchView = (SearchView) menuSearchItem.getActionView();
@@ -169,7 +171,7 @@ public class compus_map extends AppCompatActivity implements
         mMap.getUiSettings().setCompassEnabled(true);       // 左上角的指南針，要兩指旋轉才會出現
         mMap.getUiSettings().setMapToolbarEnabled(true);    // 右下角的導覽及開啟 Google Map功能
         mMap.moveCamera(CameraUpdateFactory.newLatLng(yuntech));
-        mMap.animateCamera(CameraUpdateFactory.zoomTo(16));     // 放大地圖到 16 倍大
+        mMap.animateCamera(CameraUpdateFactory.zoomTo(15));
         mMap.setInfoWindowAdapter(new MyInfoWindowAdapter());
     }
 
@@ -556,20 +558,28 @@ public class compus_map extends AppCompatActivity implements
         PolygonOptions polygonOptions;
         for (String key : mapArea.keySet()) {
             int color = 0;
-            if (key.equals("行政區域")) {
-                color = Color.argb(255, 140, 178, 131);
-            } else if (key.equals("一般區域")) {
-                color = Color.argb(255, 199, 211, 147);
-            } else if (key.equals("學生宿舍")) {
-                color = Color.argb(255, 221, 152, 155);
-            } else if (key.equals("管理學院")) {
-                color = Color.argb(255, 114, 176, 187);
-            } else if (key.equals("工程學院")) {
-                color = Color.argb(255, 189, 154, 186);
-            } else if (key.equals("人科學院")) {
-                color = Color.argb(255, 210, 185, 93);
-            } else if (key.equals("設計學院")) {
-                color = Color.argb(255, 200, 131, 98);
+            switch (key) {
+                case "行政區域":
+                    color = Color.argb(255, 140, 178, 131);
+                    break;
+                case "一般區域":
+                    color = Color.argb(255, 199, 211, 147);
+                    break;
+                case "學生宿舍":
+                    color = Color.argb(255, 221, 152, 155);
+                    break;
+                case "管理學院":
+                    color = Color.argb(255, 114, 176, 187);
+                    break;
+                case "工程學院":
+                    color = Color.argb(255, 189, 154, 186);
+                    break;
+                case "人科學院":
+                    color = Color.argb(255, 210, 185, 93);
+                    break;
+                case "設計學院":
+                    color = Color.argb(255, 200, 131, 98);
+                    break;
             }
             for (String key1 : mapArea.get(key).keySet()) {
                 polygonOptions = new PolygonOptions();
@@ -618,7 +628,7 @@ public class compus_map extends AppCompatActivity implements
                 searchView.setIconified(true);
             }else {
                 // 是否要退出
-                if (isExit == false) {
+                if (!isExit) {
                     isExit = true; //記錄下一次要退出
                     Toast.makeText(this, "再按一次Back退出APP"
                             , Toast.LENGTH_SHORT).show();
@@ -635,12 +645,13 @@ public class compus_map extends AppCompatActivity implements
         return false;
     }
 
-
-
     @Override
     public boolean onQueryTextSubmit(String query) {
         Toast.makeText(this,"送出"+query,Toast.LENGTH_SHORT).show();
         searchView.setIconified(true);
+
+
+
         return false;
     }
 
