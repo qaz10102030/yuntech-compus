@@ -8,6 +8,8 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.database.Cursor;
+import android.database.sqlite.SQLiteDatabase;
 import android.graphics.Color;
 import android.graphics.Point;
 import android.location.LocationManager;
@@ -19,10 +21,13 @@ import android.provider.Settings;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.view.animation.LinearOutSlowInInterpolator;
+import android.support.v4.widget.SimpleCursorAdapter;
 import android.support.v7.app.AlertDialog;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.SearchView;
 import android.support.v7.widget.Toolbar;
+import android.text.TextUtils;
+import android.util.Log;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.Menu;
@@ -36,6 +41,7 @@ import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.google.android.gms.maps.CameraUpdate;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.OnMapReadyCallback;
@@ -65,7 +71,8 @@ import static android.Manifest.permission.WRITE_EXTERNAL_STORAGE;
 public class compus_map extends AppCompatActivity implements
         OnMapReadyCallback,
         GoogleMap.OnMarkerClickListener,
-        SearchView.OnQueryTextListener{
+        SearchView.OnQueryTextListener,
+        SearchView.OnSuggestionListener {
 
     private GoogleMap mMap;
     private static final int REQUEST_PERMISSION = 99; //設定權限是否設定成功的檢查碼
@@ -96,6 +103,7 @@ public class compus_map extends AppCompatActivity implements
     private HashMap<String, HashMap<String, List<LatLng>>> buildkind=null;
     private static Boolean isExit = false;
     private static Boolean hasTask = false;
+    private List<String> items;
 
     @TargetApi(Build.VERSION_CODES.JELLY_BEAN)
     @Override
@@ -146,11 +154,14 @@ public class compus_map extends AppCompatActivity implements
 
         SearchManager searchManager = (SearchManager) getSystemService(Context.SEARCH_SERVICE);
         searchView = (SearchView) menuSearchItem.getActionView();
+        SearchView.SearchAutoComplete mSearchAutoComplete = (SearchView.SearchAutoComplete) searchView.findViewById(R.id.search_src_text);
+        mSearchAutoComplete.setThreshold(1);
 
         searchView.setSearchableInfo(searchManager.getSearchableInfo(getComponentName()));
         searchView.setOnQueryTextListener(this);
         searchView.setQueryHint("在找什麼嗎?");
         searchView.setIconifiedByDefault(true);
+        searchView.setOnSuggestionListener(this);
         return true;
 
     }
@@ -624,7 +635,7 @@ public class compus_map extends AppCompatActivity implements
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         // 判斷是否按下Back
         if (keyCode == KeyEvent.KEYCODE_BACK) {
-            if (!searchView.isIconified()) {
+            if (!searchView.isIconified() && searchView.getQuery() == null) {
                 searchView.setIconified(true);
             }else {
                 // 是否要退出
@@ -647,19 +658,80 @@ public class compus_map extends AppCompatActivity implements
 
     @Override
     public boolean onQueryTextSubmit(String query) {
-        Toast.makeText(this,"送出"+query,Toast.LENGTH_SHORT).show();
+        Toast.makeText(this,"送出_onQueryTextSubmit "+query,Toast.LENGTH_SHORT).show();
         searchView.setIconified(true);
-
-
-
+        searchMarker(query);
         return false;
+    }
+
+    private void searchMarker(String query) {
+        Marker search = null;
+        for (int i = 0; i < mMarkers.size(); i++) {
+            if(mMarkers.get(i).getTitle().equals(query + "----------"))
+                search = mMarkers.get(i);
+        }
+        if(search != null){
+            search.showInfoWindow();
+            mMap.moveCamera(CameraUpdateFactory.newLatLng(search.getPosition()));
+        }else{
+            Toast.makeText(this,"搜尋不到 "+query,Toast.LENGTH_SHORT).show();
+        }
     }
 
     @Override
     public boolean onQueryTextChange(String newText) {
         if(newText.equals(""))
             searchView.setIconified(true);
+
+        Cursor cursor = TextUtils.isEmpty(newText) ? null : queryData(newText);
+        if (searchView.getSuggestionsAdapter() == null) {
+            searchView.setSuggestionsAdapter(new SimpleCursorAdapter(this, R.layout.search_item, cursor, new String[]{"name"}, new int[]{R.id.item}));
+        } else {
+            searchView.getSuggestionsAdapter().changeCursor(cursor);
+        }
         return false;
+    }
+
+    private Cursor queryData(String key) {
+        SQLiteDatabase db = SQLiteDatabase.openOrCreateDatabase(getFilesDir() + "yuntech_data.db", null);
+        Cursor cursor = null;
+        try {
+            String querySql = "select * from tb_department where name like '%" + key + "%'";
+            cursor = db.rawQuery(querySql, null);
+        } catch (Exception e) {
+            e.printStackTrace();
+
+            String createSql = "create table tb_department (_id integer primary key autoincrement,name varchar(100))";
+            db.execSQL(createSql);
+
+            String insertSql = "insert into tb_department values (null,?)";
+            for (int i = 0; i < Cheeses.sCheeseStrings.length; i++) {
+                db.execSQL(insertSql, new String[]{Cheeses.sCheeseStrings[i]});
+            }
+
+            String querySql = "select * from tb_department where name like '%" + key + "%'";
+            cursor = db.rawQuery(querySql, null);
+
+        }
+        return cursor;
+    }
+
+    @Override
+    public boolean onSuggestionSelect(int position) {
+        return false;
+    }
+
+    @Override
+    public boolean onSuggestionClick(int position) {
+        String suggestion = getSuggestion(position);
+        searchView.setQuery(suggestion, true); // submit query now
+        return true; // replace default search manager behaviour
+    }
+
+    private String getSuggestion(int position) {
+        Cursor cursor = (Cursor) searchView.getSuggestionsAdapter().getItem(
+                position);
+        return cursor.getString(cursor.getColumnIndex("name"));
     }
 
 }
