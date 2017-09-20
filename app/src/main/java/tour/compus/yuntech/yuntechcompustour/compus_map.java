@@ -103,7 +103,6 @@ public class compus_map extends AppCompatActivity implements
     private HashMap<String, HashMap<String, List<LatLng>>> buildkind=null;
     private static Boolean isExit = false;
     private static Boolean hasTask = false;
-    private List<String> items;
 
     @TargetApi(Build.VERSION_CODES.JELLY_BEAN)
     @Override
